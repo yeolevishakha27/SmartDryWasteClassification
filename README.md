@@ -85,7 +85,7 @@ Components used:
 
 Real implementation of the smart waste system:
 
-![Hardware Model](./WhatsApp%20Image%202026-03-02%20at%205.33.14%20PM(1).jpeg)
+![Hardware Model](./WhatsApp%20Image%202026-03-02%20at%205.33.14%20PM.jpeg)
 
 ---
 

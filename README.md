@@ -64,7 +64,7 @@ Displays:
 - Confidence score
 - Waste distribution graph
 
-![Cloud Platform](./Cloud%20Platform(1).png)
+![Cloud Platform](./Cloud%20Platform.png)
 
 ---
 

@@ -1,0 +1,26 @@
+# Model Information
+
+## Waste Classification Model
+
+This project uses the EfficientNet-B0 deep learning architecture for waste image classification.
+
+### Model Details
+
+* Architecture: EfficientNet-B0
+* Framework: PyTorch
+* Model File: WasteIqEfficient.pth
+* Task: Waste Classification
+
+### Performance
+
+The EfficientNet-B0 model was trained on a labeled waste dataset and achieved an accuracy of **[97.16]%** on the test dataset.
+
+### Why EfficientNet-B0?
+
+EfficientNet-B0 was selected because it provides a good balance between accuracy and computational efficiency. It uses compound scaling to optimize network depth, width, and resolution, resulting in strong performance with fewer parameters compared to traditional CNN architectures.
+
+### Note
+
+The trained model file (`WasteIqEfficient.pth`) is not included in this repository because GitHub has file size limitations. The repository contains the complete source code, training pipeline, and model architecture required to reproduce the results.
+
+For access to the trained model weights, please contact the project author.

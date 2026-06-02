@@ -1,0 +1,234 @@
+#include "esp_camera.h"
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <HTTPClient.h>
+#include <ESP32Servo.h>
+
+// ================= WIFI =================
+const char* ssid = "Yash Thigale";
+const char* password = "8446518961";
+
+// ================= SERVER =================
+const char* serverUrl = "https://vish2711-waste-prob-dashboard.hf.space/predict";
+
+// ================= PINS =================
+#define FLASH_PIN 4
+#define IR_PIN 13
+
+#define GATE_SERVO_PIN 14
+#define BIN_SERVO_PIN 2
+
+Servo binServo;
+Servo gateServo;
+
+// Positions
+#define PAPER_POS   0
+#define PLASTIC_POS 90
+#define METAL_POS   180
+
+#define GATE_CLOSE 0
+#define GATE_OPEN  90
+
+bool objectHandled = false;
+unsigned long lastDetectionTime = 0;
+const unsigned long cooldownTime = 8000;
+
+// ================= CAMERA CONFIG =================
+#define PWDN_GPIO_NUM     32
+#define RESET_GPIO_NUM    -1
+#define XCLK_GPIO_NUM      0
+#define SIOD_GPIO_NUM     26
+#define SIOC_GPIO_NUM     27
+#define Y9_GPIO_NUM       35
+#define Y8_GPIO_NUM       34
+#define Y7_GPIO_NUM       39
+#define Y6_GPIO_NUM       36
+#define Y5_GPIO_NUM       21
+#define Y4_GPIO_NUM       19
+#define Y3_GPIO_NUM       18
+#define Y2_GPIO_NUM        5
+#define VSYNC_GPIO_NUM    25
+#define HREF_GPIO_NUM     23
+#define PCLK_GPIO_NUM     22
+
+// ================= CAMERA =================
+void startCamera() {
+  camera_config_t config;
+
+  config.ledc_channel = LEDC_CHANNEL_0;
+  config.ledc_timer = LEDC_TIMER_0;
+
+  config.pin_d0 = Y2_GPIO_NUM;
+  config.pin_d1 = Y3_GPIO_NUM;
+  config.pin_d2 = Y4_GPIO_NUM;
+  config.pin_d3 = Y5_GPIO_NUM;
+  config.pin_d4 = Y6_GPIO_NUM;
+  config.pin_d5 = Y7_GPIO_NUM;
+  config.pin_d6 = Y8_GPIO_NUM;
+  config.pin_d7 = Y9_GPIO_NUM;
+
+  config.pin_xclk = XCLK_GPIO_NUM;
+  config.pin_pclk = PCLK_GPIO_NUM;
+  config.pin_vsync = VSYNC_GPIO_NUM;
+  config.pin_href = HREF_GPIO_NUM;
+  config.pin_sscb_sda = SIOD_GPIO_NUM;
+  config.pin_sscb_scl = SIOC_GPIO_NUM;
+  config.pin_pwdn = PWDN_GPIO_NUM;
+  config.pin_reset = RESET_GPIO_NUM;
+
+  config.xclk_freq_hz = 20000000;
+  config.pixel_format = PIXFORMAT_JPEG;
+
+  config.frame_size = FRAMESIZE_QQVGA;
+  config.jpeg_quality = 40;
+  config.fb_count = 1;
+
+  if (esp_camera_init(&config) != ESP_OK) {
+    Serial.println("Camera init failed!");
+    while (true);
+  }
+
+  Serial.println("Camera Ready ✔");
+}
+
+// ================= WIFI =================
+void connectWiFi() {
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting WiFi");
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("\nWiFi Connected ✔");
+}
+
+// ================= SERVO LOGIC (FIXED) =================
+void rotateBin(String response) {
+
+  if (response.indexOf("\"prediction\":\"metal\"") >= 0) {
+    binServo.write(METAL_POS);
+    Serial.println("Metal → 180°");
+  }
+  else if (response.indexOf("\"prediction\":\"plastic\"") >= 0) {
+    binServo.write(PLASTIC_POS);
+    Serial.println("Plastic → 90°");
+  }
+  else if (response.indexOf("\"prediction\":\"paper\"") >= 0) {
+    binServo.write(PAPER_POS);
+    Serial.println("Paper → 0°");
+  }
+  else {
+    Serial.println("Unknown response");
+  }
+
+  delay(2000);
+
+  gateServo.write(GATE_OPEN);
+  Serial.println("Gate Open");
+  delay(3000);
+
+  gateServo.write(GATE_CLOSE);
+  Serial.println("Gate Close");
+}
+
+// ================= SETUP =================
+void setup() {
+
+  Serial.begin(115200);
+
+  pinMode(FLASH_PIN, OUTPUT);
+  pinMode(IR_PIN, INPUT);
+
+  binServo.setPeriodHertz(50);
+  gateServo.setPeriodHertz(50);
+
+  binServo.attach(BIN_SERVO_PIN, 500, 2400);
+  gateServo.attach(GATE_SERVO_PIN, 500, 2400);
+
+  binServo.write(PAPER_POS);
+  gateServo.write(GATE_CLOSE);
+
+  startCamera();
+  connectWiFi();
+}
+
+// ================= LOOP =================
+void loop() {
+
+  int irState = digitalRead(IR_PIN);
+
+  if (irState == LOW && !objectHandled) {
+
+    objectHandled = true;
+    lastDetectionTime = millis();
+
+    Serial.println("Object Detected!");
+
+    digitalWrite(FLASH_PIN, HIGH);
+    delay(200);
+    camera_fb_t * fb = esp_camera_fb_get();
+    digitalWrite(FLASH_PIN, LOW);
+
+    if (!fb) {
+      Serial.println("Capture failed");
+      objectHandled = false;
+      return;
+    }
+
+    WiFiClientSecure client;
+    client.setInsecure();
+    HTTPClient https;
+
+    if (!https.begin(client, serverUrl)) {
+      Serial.println("HTTPS Failed");
+      esp_camera_fb_return(fb);
+      objectHandled = false;
+      return;
+    }
+
+    // 🔥 CORRECT MULTIPART UPLOAD
+    String boundary = "----ESP32Boundary";
+
+    https.addHeader("Content-Type", "multipart/form-data; boundary=" + boundary);
+
+    String bodyStart = "--" + boundary + "\r\n";
+    bodyStart += "Content-Disposition: form-data; name=\"file\"; filename=\"image.jpg\"\r\n";
+    bodyStart += "Content-Type: image/jpeg\r\n\r\n";
+
+    String bodyEnd = "\r\n--" + boundary + "--\r\n";
+
+    int totalLength = bodyStart.length() + fb->len + bodyEnd.length();
+
+    uint8_t* fullBody = (uint8_t*) malloc(totalLength);
+
+    memcpy(fullBody, bodyStart.c_str(), bodyStart.length());
+    memcpy(fullBody + bodyStart.length(), fb->buf, fb->len);
+    memcpy(fullBody + bodyStart.length() + fb->len, bodyEnd.c_str(), bodyEnd.length());
+
+    Serial.println("Sending to server...");
+
+    int httpCode = https.POST(fullBody, totalLength);
+
+    Serial.print("HTTP Code: ");
+    Serial.println(httpCode);
+
+    if (httpCode > 0) {
+      String response = https.getString();
+      Serial.println(response);
+      rotateBin(response);
+    } else {
+      Serial.println("HTTP Error");
+    }
+
+    free(fullBody);
+    https.end();
+    esp_camera_fb_return(fb);
+  }
+
+  if (objectHandled && millis() - lastDetectionTime > cooldownTime) {
+    objectHandled = false;
+    Serial.println("Ready again");
+  }
+}

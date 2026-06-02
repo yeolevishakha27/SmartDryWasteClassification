@@ -1,0 +1,9 @@
+torch
+torchvision
+timm
+gradio
+fastapi
+uvicorn
+pillow
+matplotlib
+python-multipart
